@@ -5,7 +5,7 @@ from esphome.components.web_server_base import CONF_WEB_SERVER_BASE_ID
 from esphome.const import CONF_ID
 from esphome.core import coroutine_with_priority
 
-AUTO_LOAD = ["web_server_base"]
+AUTO_LOAD = ["web_server_base", "mqtt"]
 DEPENDENCIES = ["wifi"]
 CODEOWNERS = ["@OttoWinter"]
 

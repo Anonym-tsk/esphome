@@ -13,6 +13,10 @@ namespace captive_portal {
 struct CaptivePortalSettings {
   char ssid[33];
   char password[65];
+  char mqtt_server[33];
+  char mqtt_port[5];
+  char mqtt_user[33];
+  char mqtt_pass[65];
 } PACKED;  // NOLINT
 
 class CaptivePortal : public AsyncWebHandler, public Component {
@@ -67,7 +71,7 @@ class CaptivePortal : public AsyncWebHandler, public Component {
   void handleRequest(AsyncWebServerRequest *req) override;
 
  protected:
-  void override_sta_(const std::string &ssid, const std::string &password);
+  void override_sta_(const std::string &ssid, const std::string &password, const std::string &mqtt_server, const std::string &mqtt_port, const std::string &mqtt_user, const std::string &mqtt_pass);
 
   web_server_base::WebServerBase *base_;
   bool initialized_{false};

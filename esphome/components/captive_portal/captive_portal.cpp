@@ -2,6 +2,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/application.h"
 #include "esphome/components/wifi/wifi_component.h"
+#include "esphome/components/mqtt/mqtt_client.h"
 
 namespace esphome {
 namespace captive_portal {
@@ -52,7 +53,14 @@ void CaptivePortal::handle_index(AsyncWebServerRequest *request) {
 
   stream->print(F("<h3>WiFi Settings</h3><form method=\"GET\" action=\"/wifisave\"><input id=\"ssid\" name=\"ssid\" "
                   "length=32 placeholder=\"SSID\"><br/><input id=\"psk\" name=\"psk\" length=64 type=\"password\" "
-                  "placeholder=\"Password\"><br/><br/><button type=\"submit\">Save</button></form><br><hr><br>"));
+                  "placeholder=\"Password\"><br/>"
+                  "<h3>MQTT Settings</h3>"
+                  "<p>Keep empty to use Home Assistant API</p>"
+                  "<input id=\"mqtt_server\" name=\"mqtt_server\" required length=32 placeholder=\"MQTT Server\"><br/>"
+                  "<input id=\"mqtt_port\" name=\"mqtt_port\" type=\"number\" value=\"1883\" required length=5 placeholder=\"MQTT Port\"><br/>"
+                  "<input id=\"mqtt_user\" name=\"mqtt_user\" length=32 placeholder=\"Username\"><br/>"
+                  "<input id=\"mqtt_pass\" name=\"mqtt_pass\" type=\"password\" length=64 placeholder=\"Password\"><br/>"
+                  "<br/><button type=\"submit\">Save</button></form><br><hr><br>"));
   stream->print(F("<h1>OTA Update</h1><form method=\"POST\" action=\"/update\" enctype=\"multipart/form-data\"><input "
                   "type=\"file\" name=\"update\"><button type=\"submit\">Update</button></form>"));
   stream->print(F("</div></body></html>"));
@@ -61,22 +69,38 @@ void CaptivePortal::handle_index(AsyncWebServerRequest *request) {
 void CaptivePortal::handle_wifisave(AsyncWebServerRequest *request) {
   std::string ssid = request->arg("ssid").c_str();
   std::string psk = request->arg("psk").c_str();
+
+  std::string mqtt_server = request->arg("mqtt_server").c_str();
+  std::string mqtt_port = request->arg("mqtt_port").c_str();
+  std::string mqtt_user = request->arg("mqtt_user").c_str();
+  std::string mqtt_pass = request->arg("mqtt_pass").c_str();
+
   ESP_LOGI(TAG, "Captive Portal Requested WiFi Settings Change:");
   ESP_LOGI(TAG, "  SSID='%s'", ssid.c_str());
   ESP_LOGI(TAG, "  Password=" LOG_SECRET("'%s'"), psk.c_str());
-  this->override_sta_(ssid, psk);
+  this->override_sta_(ssid, psk, mqtt_server, mqtt_port, mqtt_user, mqtt_pass);
   request->redirect("/?save=true");
 }
-void CaptivePortal::override_sta_(const std::string &ssid, const std::string &password) {
+void CaptivePortal::override_sta_(const std::string &ssid, const std::string &password, const std::string &mqtt_server, const std::string &mqtt_port, const std::string &mqtt_user, const std::string &mqtt_pass) {
   CaptivePortalSettings save{};
   strcpy(save.ssid, ssid.c_str());
   strcpy(save.password, password.c_str());
+  strcpy(save.mqtt_server, mqtt_server.c_str());
+  strcpy(save.mqtt_port, mqtt_port.c_str());
+  strcpy(save.mqtt_user, mqtt_user.c_str());
+  strcpy(save.mqtt_pass, mqtt_pass.c_str());
   this->pref_.save(&save);
 
   wifi::WiFiAP sta{};
   sta.set_ssid(ssid);
   sta.set_password(password);
   wifi::global_wifi_component->set_sta(sta);
+
+  mqtt::global_mqtt_client->set_broker_address(mqtt_server);
+  auto port = parse_int(mqtt_port.c_str());
+  mqtt::global_mqtt_client->set_broker_port(*port);
+  mqtt::global_mqtt_client->set_username(mqtt_user);
+  mqtt::global_mqtt_client->set_password(mqtt_pass);
 }
 
 void CaptivePortal::setup() {
@@ -87,7 +111,7 @@ void CaptivePortal::setup() {
 
   CaptivePortalSettings save{};
   if (this->pref_.load(&save)) {
-    this->override_sta_(save.ssid, save.password);
+    this->override_sta_(save.ssid, save.password, save.mqtt_server, save.mqtt_port, save.mqtt_user, save.mqtt_pass);
   }
 }
 void CaptivePortal::start() {
