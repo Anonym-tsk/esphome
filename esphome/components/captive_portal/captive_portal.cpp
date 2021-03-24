@@ -55,7 +55,6 @@ void CaptivePortal::handle_index(AsyncWebServerRequest *request) {
                   "length=32 placeholder=\"SSID\"><br/><input id=\"psk\" name=\"psk\" length=64 type=\"password\" "
                   "placeholder=\"Password\"><br/>"
                   "<h3>MQTT Settings</h3>"
-                  "<p>Keep empty to use Home Assistant API</p>"
                   "<input id=\"mqtt_server\" name=\"mqtt_server\" required length=32 placeholder=\"MQTT Server\"><br/>"
                   "<input id=\"mqtt_port\" name=\"mqtt_port\" type=\"number\" value=\"1883\" required length=5 placeholder=\"MQTT Port\"><br/>"
                   "<input id=\"mqtt_user\" name=\"mqtt_user\" length=32 placeholder=\"Username\"><br/>"
