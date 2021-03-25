@@ -70,8 +70,10 @@ class CaptivePortal : public AsyncWebHandler, public Component {
 
   void handleRequest(AsyncWebServerRequest *req) override;
 
+  void override_sta_mqtt(const std::string &ssid, const std::string &password, const std::string &mqtt_server, const std::string &mqtt_port, const std::string &mqtt_user, const std::string &mqtt_pass);
+
  protected:
-  void override_sta_(const std::string &ssid, const std::string &password, const std::string &mqtt_server, const std::string &mqtt_port, const std::string &mqtt_user, const std::string &mqtt_pass);
+  void override_sta_(const std::string &ssid, const std::string &password);
 
   web_server_base::WebServerBase *base_;
   bool initialized_{false};

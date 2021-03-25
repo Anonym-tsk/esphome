@@ -77,10 +77,22 @@ void CaptivePortal::handle_wifisave(AsyncWebServerRequest *request) {
   ESP_LOGI(TAG, "Captive Portal Requested WiFi Settings Change:");
   ESP_LOGI(TAG, "  SSID='%s'", ssid.c_str());
   ESP_LOGI(TAG, "  Password=" LOG_SECRET("'%s'"), psk.c_str());
-  this->override_sta_(ssid, psk, mqtt_server, mqtt_port, mqtt_user, mqtt_pass);
+  this->override_sta_mqtt(ssid, psk, mqtt_server, mqtt_port, mqtt_user, mqtt_pass);
   request->redirect("/?save=true");
 }
-void CaptivePortal::override_sta_(const std::string &ssid, const std::string &password, const std::string &mqtt_server, const std::string &mqtt_port, const std::string &mqtt_user, const std::string &mqtt_pass) {
+void CaptivePortal::override_sta_(const std::string &ssid, const std::string &password) {
+  CaptivePortalSettings save{};
+  strcpy(save.ssid, ssid.c_str());
+  strcpy(save.password, password.c_str());
+  this->pref_.save(&save);
+
+  wifi::WiFiAP sta{};
+  sta.set_ssid(ssid);
+  sta.set_password(password);
+  wifi::global_wifi_component->set_sta(sta);
+}
+
+void CaptivePortal::override_sta_mqtt(const std::string &ssid, const std::string &password, const std::string &mqtt_server, const std::string &mqtt_port, const std::string &mqtt_user, const std::string &mqtt_pass) {
   CaptivePortalSettings save{};
   strcpy(save.ssid, ssid.c_str());
   strcpy(save.password, password.c_str());
@@ -110,7 +122,7 @@ void CaptivePortal::setup() {
 
   CaptivePortalSettings save{};
   if (this->pref_.load(&save)) {
-    this->override_sta_(save.ssid, save.password, save.mqtt_server, save.mqtt_port, save.mqtt_user, save.mqtt_pass);
+    this->override_sta_mqtt(save.ssid, save.password, save.mqtt_server, save.mqtt_port, save.mqtt_user, save.mqtt_pass);
   }
 }
 void CaptivePortal::start() {
