@@ -2,6 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/defines.h"
+#include "esphome/core/helpers.h"
 #include "esphome/components/uart/uart.h"
 
 #ifdef USE_TIME
@@ -78,19 +79,30 @@ class Tuya : public Component, public uart::UARTDevice {
   void set_raw_datapoint_value(uint8_t datapoint_id, const std::vector<uint8_t> &value);
   void set_boolean_datapoint_value(uint8_t datapoint_id, bool value);
   void set_integer_datapoint_value(uint8_t datapoint_id, uint32_t value);
+  void set_status_pin(InternalGPIOPin *status_pin) { this->status_pin_ = status_pin; }
   void set_string_datapoint_value(uint8_t datapoint_id, const std::string &value);
   void set_enum_datapoint_value(uint8_t datapoint_id, uint8_t value);
   void set_bitmask_datapoint_value(uint8_t datapoint_id, uint32_t value, uint8_t length);
+  void force_set_raw_datapoint_value(uint8_t datapoint_id, const std::vector<uint8_t> &value);
+  void force_set_boolean_datapoint_value(uint8_t datapoint_id, bool value);
+  void force_set_integer_datapoint_value(uint8_t datapoint_id, uint32_t value);
+  void force_set_string_datapoint_value(uint8_t datapoint_id, const std::string &value);
+  void force_set_enum_datapoint_value(uint8_t datapoint_id, uint8_t value);
+  void force_set_bitmask_datapoint_value(uint8_t datapoint_id, uint32_t value, uint8_t length);
+  TuyaInitState get_init_state();
 #ifdef USE_TIME
   void set_time_id(time::RealTimeClock *time_id) { this->time_id_ = time_id; }
 #endif
   void add_ignore_mcu_update_on_datapoints(uint8_t ignore_mcu_update_on_datapoints) {
     this->ignore_mcu_update_on_datapoints_.push_back(ignore_mcu_update_on_datapoints);
   }
+  void add_on_initialized_callback(std::function<void()> callback) {
+    this->initialized_callback_.add(std::move(callback));
+  }
 
  protected:
   void handle_char_(uint8_t c);
-  void handle_datapoint_(const uint8_t *buffer, size_t len);
+  void handle_datapoints_(const uint8_t *buffer, size_t len);
   optional<TuyaDatapoint> get_datapoint_(uint8_t datapoint_id);
   bool validate_message_();
 
@@ -100,8 +112,11 @@ class Tuya : public Component, public uart::UARTDevice {
   void send_command_(const TuyaCommand &command);
   void send_empty_command_(TuyaCommandType command);
   void set_numeric_datapoint_value_(uint8_t datapoint_id, TuyaDatapointType datapoint_type, uint32_t value,
-                                    uint8_t length);
+                                    uint8_t length, bool forced);
+  void set_string_datapoint_value_(uint8_t datapoint_id, const std::string &value, bool forced);
+  void set_raw_datapoint_value_(uint8_t datapoint_id, const std::vector<uint8_t> &value, bool forced);
   void send_datapoint_command_(uint8_t datapoint_id, TuyaDatapointType datapoint_type, std::vector<uint8_t> data);
+  void set_status_pin_();
   void send_wifi_status_();
 
 #ifdef USE_TIME
@@ -109,9 +124,12 @@ class Tuya : public Component, public uart::UARTDevice {
   optional<time::RealTimeClock *> time_id_{};
 #endif
   TuyaInitState init_state_ = TuyaInitState::INIT_HEARTBEAT;
+  bool init_failed_{false};
+  int init_retries_{0};
   uint8_t protocol_version_ = -1;
-  int gpio_status_ = -1;
-  int gpio_reset_ = -1;
+  optional<InternalGPIOPin *> status_pin_{};
+  int status_pin_reported_ = -1;
+  int reset_pin_reported_ = -1;
   uint32_t last_command_timestamp_ = 0;
   uint32_t last_rx_char_timestamp_ = 0;
   std::string product_ = "";
@@ -122,6 +140,7 @@ class Tuya : public Component, public uart::UARTDevice {
   std::vector<TuyaCommand> command_queue_;
   optional<TuyaCommandType> expected_response_{};
   uint8_t wifi_status_ = -1;
+  CallbackManager<void()> initialized_callback_{};
 };
 
 }  // namespace tuya

@@ -1,5 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome.cpp_generator import MockObjClass
 from esphome.cpp_helpers import setup_entity
 from esphome import automation, core
 from esphome.automation import Condition, maybe_simple_id
@@ -7,7 +8,9 @@ from esphome.components import mqtt
 from esphome.const import (
     CONF_DELAY,
     CONF_DEVICE_CLASS,
+    CONF_ENTITY_CATEGORY,
     CONF_FILTERS,
+    CONF_ICON,
     CONF_ID,
     CONF_INVALID_COOLDOWN,
     CONF_INVERTED,
@@ -19,10 +22,10 @@ from esphome.const import (
     CONF_ON_PRESS,
     CONF_ON_RELEASE,
     CONF_ON_STATE,
+    CONF_PUBLISH_INITIAL_STATE,
     CONF_STATE,
     CONF_TIMING,
     CONF_TRIGGER_ID,
-    CONF_NAME,
     CONF_MQTT_ID,
     DEVICE_CLASS_EMPTY,
     DEVICE_CLASS_BATTERY,
@@ -44,9 +47,11 @@ from esphome.const import (
     DEVICE_CLASS_POWER,
     DEVICE_CLASS_PRESENCE,
     DEVICE_CLASS_PROBLEM,
+    DEVICE_CLASS_RUNNING,
     DEVICE_CLASS_SAFETY,
     DEVICE_CLASS_SMOKE,
     DEVICE_CLASS_SOUND,
+    DEVICE_CLASS_TAMPER,
     DEVICE_CLASS_UPDATE,
     DEVICE_CLASS_VIBRATION,
     DEVICE_CLASS_WINDOW,
@@ -76,9 +81,11 @@ DEVICE_CLASSES = [
     DEVICE_CLASS_POWER,
     DEVICE_CLASS_PRESENCE,
     DEVICE_CLASS_PROBLEM,
+    DEVICE_CLASS_RUNNING,
     DEVICE_CLASS_SAFETY,
     DEVICE_CLASS_SMOKE,
     DEVICE_CLASS_SOUND,
+    DEVICE_CLASS_TAMPER,
     DEVICE_CLASS_UPDATE,
     DEVICE_CLASS_VIBRATION,
     DEVICE_CLASS_WINDOW,
@@ -311,7 +318,7 @@ def validate_multi_click_timing(value):
     return timings
 
 
-device_class = cv.one_of(*DEVICE_CLASSES, lower=True, space="_")
+validate_device_class = cv.one_of(*DEVICE_CLASSES, lower=True, space="_")
 
 
 BINARY_SENSOR_SCHEMA = cv.ENTITY_BASE_SCHEMA.extend(cv.MQTT_COMPONENT_SCHEMA).extend(
@@ -320,7 +327,8 @@ BINARY_SENSOR_SCHEMA = cv.ENTITY_BASE_SCHEMA.extend(cv.MQTT_COMPONENT_SCHEMA).ex
         cv.OnlyWith(CONF_MQTT_ID, "mqtt"): cv.declare_id(
             mqtt.MQTTBinarySensorComponent
         ),
-        cv.Optional(CONF_DEVICE_CLASS): device_class,
+        cv.Optional(CONF_PUBLISH_INITIAL_STATE): cv.boolean,
+        cv.Optional(CONF_DEVICE_CLASS): validate_device_class,
         cv.Optional(CONF_FILTERS): validate_filters,
         cv.Optional(CONF_ON_PRESS): automation.validate_automation(
             {
@@ -373,12 +381,47 @@ BINARY_SENSOR_SCHEMA = cv.ENTITY_BASE_SCHEMA.extend(cv.MQTT_COMPONENT_SCHEMA).ex
     }
 )
 
+_UNDEF = object()
+
+
+def binary_sensor_schema(
+    class_: MockObjClass = _UNDEF,
+    *,
+    icon: str = _UNDEF,
+    entity_category: str = _UNDEF,
+    device_class: str = _UNDEF,
+) -> cv.Schema:
+    schema = BINARY_SENSOR_SCHEMA
+    if class_ is not _UNDEF:
+        schema = schema.extend({cv.GenerateID(): cv.declare_id(class_)})
+    if icon is not _UNDEF:
+        schema = schema.extend({cv.Optional(CONF_ICON, default=icon): cv.icon})
+    if entity_category is not _UNDEF:
+        schema = schema.extend(
+            {
+                cv.Optional(
+                    CONF_ENTITY_CATEGORY, default=entity_category
+                ): cv.entity_category
+            }
+        )
+    if device_class is not _UNDEF:
+        schema = schema.extend(
+            {
+                cv.Optional(
+                    CONF_DEVICE_CLASS, default=device_class
+                ): validate_device_class
+            }
+        )
+    return schema
+
 
 async def setup_binary_sensor_core_(var, config):
     await setup_entity(var, config)
 
     if CONF_DEVICE_CLASS in config:
         cg.add(var.set_device_class(config[CONF_DEVICE_CLASS]))
+    if CONF_PUBLISH_INITIAL_STATE in config:
+        cg.add(var.set_publish_initial_state(config[CONF_PUBLISH_INITIAL_STATE]))
     if CONF_INVERTED in config:
         cg.add(var.set_inverted(config[CONF_INVERTED]))
     if CONF_FILTERS in config:
@@ -439,7 +482,7 @@ async def register_binary_sensor(var, config):
 
 
 async def new_binary_sensor(config):
-    var = cg.new_Pvariable(config[CONF_ID], config[CONF_NAME])
+    var = cg.new_Pvariable(config[CONF_ID])
     await register_binary_sensor(var, config)
     return var
 

@@ -413,8 +413,6 @@ void Pipsolar::loop() {
         this->state_ = STATE_IDLE;
         break;
       case POLLING_QT:
-        this->state_ = STATE_IDLE;
-        break;
       case POLLING_QMN:
         this->state_ = STATE_IDLE;
         break;
@@ -481,7 +479,7 @@ void Pipsolar::loop() {
         ESP_LOGD(TAG, "Decode QFLAG");
         // result like:"(EbkuvxzDajy"
         // get through all char: ignore first "(" Enable flag on 'E', Disable on 'D') else set the corresponding value
-        for (int i = 1; i < strlen(tmp); i++) {
+        for (size_t i = 1; i < strlen(tmp); i++) {
           switch (tmp[i]) {
             case 'E':
               enabled = true;
@@ -530,7 +528,7 @@ void Pipsolar::loop() {
         this->value_warnings_present_ = false;
         this->value_faults_present_ = true;
 
-        for (int i = 1; i < strlen(tmp); i++) {
+        for (size_t i = 1; i < strlen(tmp); i++) {
           enabled = tmp[i] == '1';
           switch (i) {
             case 1:
@@ -656,7 +654,7 @@ void Pipsolar::loop() {
             case 32:
               fc = tmp[i];
               fc += tmp[i + 1];
-              this->value_fault_code_ = strtol(fc.c_str(), nullptr, 10);
+              this->value_fault_code_ = parse_number<int>(fc).value_or(0);
               break;
             case 34:
               this->value_warnung_low_pv_energy_ = enabled;
@@ -770,7 +768,7 @@ uint8_t Pipsolar::check_incoming_length_(uint8_t length) {
 
 uint8_t Pipsolar::check_incoming_crc_() {
   uint16_t crc16;
-  crc16 = calc_crc_(read_buffer_, read_pos_ - 3);
+  crc16 = cal_crc_half_(read_buffer_, read_pos_ - 3);
   ESP_LOGD(TAG, "checking crc on incoming message");
   if (((uint8_t)((crc16) >> 8)) == read_buffer_[read_pos_ - 3] &&
       ((uint8_t)((crc16) &0xff)) == read_buffer_[read_pos_ - 2]) {
@@ -799,7 +797,7 @@ uint8_t Pipsolar::send_next_command_() {
     this->command_start_millis_ = millis();
     this->empty_uart_buffer_();
     this->read_pos_ = 0;
-    crc16 = calc_crc_(byte_command, length);
+    crc16 = cal_crc_half_(byte_command, length);
     this->write_str(command);
     // checksum
     this->write(((uint8_t)((crc16) >> 8)));   // highbyte
@@ -826,8 +824,8 @@ void Pipsolar::send_next_poll_() {
   this->command_start_millis_ = millis();
   this->empty_uart_buffer_();
   this->read_pos_ = 0;
-  crc16 = calc_crc_(this->used_polling_commands_[this->last_polling_command_].command,
-                    this->used_polling_commands_[this->last_polling_command_].length);
+  crc16 = cal_crc_half_(this->used_polling_commands_[this->last_polling_command_].command,
+                        this->used_polling_commands_[this->last_polling_command_].length);
   this->write_array(this->used_polling_commands_[this->last_polling_command_].command,
                     this->used_polling_commands_[this->last_polling_command_].length);
   // checksum
@@ -894,28 +892,41 @@ void Pipsolar::add_polling_command_(const char *command, ENUMPollingCommand poll
   }
 }
 
-uint16_t Pipsolar::calc_crc_(uint8_t *msg, int n) {
-  // Initial value. xmodem uses 0xFFFF but this example
-  // requires an initial value of zero.
-  uint16_t x = 0;
-  while (n--) {
-    x = crc_xmodem_update_(x, (uint16_t) *msg++);
-  }
-  return (x);
-}
+uint16_t Pipsolar::cal_crc_half_(uint8_t *msg, uint8_t len) {
+  uint16_t crc;
 
-// See bottom of this page: http://www.nongnu.org/avr-libc/user-manual/group__util__crc.html
-// Polynomial: x^16 + x^12 + x^5 + 1 (0x1021)
-uint16_t Pipsolar::crc_xmodem_update_(uint16_t crc, uint8_t data) {
-  int i;
-  crc = crc ^ ((uint16_t) data << 8);
-  for (i = 0; i < 8; i++) {
-    if (crc & 0x8000)
-      crc = (crc << 1) ^ 0x1021;  //(polynomial = 0x1021)
-    else
-      crc <<= 1;
+  uint8_t da;
+  uint8_t *ptr;
+  uint8_t b_crc_hign;
+  uint8_t b_crc_low;
+
+  uint16_t crc_ta[16] = {0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
+                         0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef};
+
+  ptr = msg;
+  crc = 0;
+
+  while (len-- != 0) {
+    da = ((uint8_t)(crc >> 8)) >> 4;
+    crc <<= 4;
+    crc ^= crc_ta[da ^ (*ptr >> 4)];
+    da = ((uint8_t)(crc >> 8)) >> 4;
+    crc <<= 4;
+    crc ^= crc_ta[da ^ (*ptr & 0x0f)];
+    ptr++;
   }
-  return crc;
+
+  b_crc_low = crc;
+  b_crc_hign = (uint8_t)(crc >> 8);
+
+  if (b_crc_low == 0x28 || b_crc_low == 0x0d || b_crc_low == 0x0a)
+    b_crc_low++;
+  if (b_crc_hign == 0x28 || b_crc_hign == 0x0d || b_crc_hign == 0x0a)
+    b_crc_hign++;
+
+  crc = ((uint16_t) b_crc_hign) << 8;
+  crc += b_crc_low;
+  return (crc);
 }
 
 }  // namespace pipsolar

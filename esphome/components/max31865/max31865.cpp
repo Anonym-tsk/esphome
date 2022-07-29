@@ -94,6 +94,14 @@ void MAX31865Sensor::read_data_() {
   const uint16_t rtd_resistance_register = this->read_register_16_(RTD_RESISTANCE_MSB_REG);
   this->write_config_(0b11000000, 0b00000000);
 
+  // Check for bad connection
+  if (rtd_resistance_register == 0b0000000000000000 || rtd_resistance_register == 0b1111111111111111) {
+    ESP_LOGE(TAG, "SPI bus read all 0 or all 1 (0x%04X), check MAX31865 wiring & power.", rtd_resistance_register);
+    this->publish_state(NAN);
+    this->status_set_error();
+    return;
+  }
+
   // Check faults
   const uint8_t faults = this->read_register_(FAULT_STATUS_REG);
   if ((has_fault_ = faults & 0b00111100)) {
@@ -203,16 +211,16 @@ float MAX31865Sensor::calc_temperature_(float rtd_ratio) {
     rtd_resistance *= 100;
   }
   float rpoly = rtd_resistance;
-  float neg_temp = -242.02;
-  neg_temp += 2.2228 * rpoly;
+  float neg_temp = -242.02f;
+  neg_temp += 2.2228f * rpoly;
   rpoly *= rtd_resistance;  // square
-  neg_temp += 2.5859e-3 * rpoly;
+  neg_temp += 2.5859e-3f * rpoly;
   rpoly *= rtd_resistance;  // ^3
-  neg_temp -= 4.8260e-6 * rpoly;
+  neg_temp -= 4.8260e-6f * rpoly;
   rpoly *= rtd_resistance;  // ^4
-  neg_temp -= 2.8183e-8 * rpoly;
+  neg_temp -= 2.8183e-8f * rpoly;
   rpoly *= rtd_resistance;  // ^5
-  neg_temp += 1.5243e-10 * rpoly;
+  neg_temp += 1.5243e-10f * rpoly;
   return neg_temp;
 }
 

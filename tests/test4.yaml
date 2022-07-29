@@ -45,9 +45,11 @@ logger:
   level: DEBUG
 
 web_server:
+  ota: false
   auth:
     username: admin
     password: admin
+  include_internal: true
 
 time:
   - platform: sntp
@@ -55,6 +57,18 @@ time:
 
 tuya:
   time_id: sntp_time
+  status_pin:
+    number: 14
+    inverted: true
+
+select:
+  - platform: tuya
+    id: tuya_select
+    enum_datapoint: 42
+    options:
+      0: Internal
+      1: Floor
+      2: Both
 
 pipsolar:
     id: inverter0
@@ -62,6 +76,14 @@ pipsolar:
 sx1509:
   - id: sx1509_hub
     address: 0x3E
+
+mcp3204:
+  cs_pin: GPIO23
+
+dac7678:
+    address: 0x4A
+    id: dac7678_hub1
+    internal_reference: true
 
 sensor:
   - platform: homeassistant
@@ -213,6 +235,13 @@ sensor:
       - or:
         - throttle: "20min"
         - delta: 0.02
+  - platform: mcp3204
+    name: "MCP3204 Pin 1"
+    number: 1
+    id: mcp_sensor
+  - platform: copy
+    source_id: mcp_sensor
+    name: "MCP binary sensor copy"
 
 #
 # platform sensor.apds9960 requires component apds9960
@@ -305,7 +334,7 @@ binary_sensor:
       then:
         - lambda: 'ESP_LOGI("ar1:", "%d", x);'
   - platform: xpt2046
-    xpt2046_id: touchscreen
+    xpt2046_id: xpt_touchscreen
     id: touch_key0
     x_min: 80
     x_max: 160
@@ -318,6 +347,17 @@ binary_sensor:
     pin:
       sx1509: sx1509_hub
       number: 3
+
+  - platform: touchscreen
+    touchscreen_id: lilygo_touchscreen
+    id: touch_key1
+    x_min: 0
+    x_max: 100
+    y_min: 0
+    y_max: 100
+    on_press:
+      - logger.log: "Touched"
+
 
 climate:
   - platform: tuya
@@ -345,6 +385,9 @@ switch:
       name: inverter0_pv_ok_condition_for_parallel
     pv_power_balance:
       name: inverter0_pv_power_balance
+  - platform: copy
+    source_id: tuya_switch
+    name: Tuya Switch Copy
 
 light:
   - platform: fastled_clockless
@@ -372,6 +415,9 @@ cover:
   - platform: tuya
     id: tuya_cover
     position_datapoint: 2
+  - platform: copy
+    source_id: tuya_cover
+    name: "Tuya Cover copy"
 
 display:
   - platform: addressable_light
@@ -411,6 +457,7 @@ display:
     reset_pin: GPIO23
     model: 2.90in
     full_update_every: 30
+    reset_duration: 200ms
     lambda: |-
       it.rectangle(0, 0, it.get_width(), it.get_height());
   - platform: waveshare_epaper
@@ -438,7 +485,16 @@ display:
     wakeup_pin: GPIO1
     vcom_pin: GPIO1
 
-
+number:
+  - platform: tuya
+    id: tuya_number
+    number_datapoint: 102
+    min_value: 0
+    max_value: 17
+    step: 1
+  - platform: copy
+    source_id: tuya_number
+    name: Tuya Number Copy
 
 text_sensor:
   - platform: pipsolar
@@ -458,12 +514,47 @@ text_sensor:
     last_qflag:
       id: inverter0_last_qflag
       name: inverter0_last_qflag
+  - platform: copy
+    source_id: inverter0_device_mode
+    name: "Inverter Text Sensor Copy"
 
 output:
   - platform: pipsolar
     pipsolar_id: inverter0
     battery_recharge_voltage:
       id: inverter0_battery_recharge_voltage_out
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 0
+    id: 'dac7678_1_ch0'
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 1
+    id: 'dac7678_1_ch1'
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 2
+    id: 'dac7678_1_ch2'
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 3
+    id: 'dac7678_1_ch3'
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 4
+    id: 'dac7678_1_ch4'
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 5
+    id: 'dac7678_1_ch5'
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 6
+    id: 'dac7678_1_ch6'
+  - platform: dac7678
+    dac7678_id: 'dac7678_hub1'
+    channel: 7
+    id: 'dac7678_1_ch7'
 esp32_camera:
   name: ESP-32 Camera
   data_pins: [GPIO17, GPIO35, GPIO34, GPIO5, GPIO39, GPIO18, GPIO36, GPIO19]
@@ -481,6 +572,12 @@ esp32_camera:
   resolution: 640x480
   jpeg_quality: 10
 
+esp32_camera_web_server:
+  - port: 8080
+    mode: stream
+  - port: 8081
+    mode: snapshot
+
 external_components:
   - source: github://esphome/esphome@dev
     refresh: 1d
@@ -488,7 +585,7 @@ external_components:
   - source: ../esphome/components
     components: ["sntp"]
 xpt2046:
-  id: touchscreen
+  id: xpt_touchscreen
   cs_pin: 17
   irq_pin: 16
   update_interval: 50ms
@@ -505,10 +602,68 @@ xpt2046:
     - lambda: |-
         ESP_LOGI("main", "args x=%d, y=%d, touched=%s", x, y, (touched ? "touch" : "release"));
         ESP_LOGI("main", "member x=%d, y=%d, touched=%d, x_raw=%d, y_raw=%d, z_raw=%d",
-            id(touchscreen).x,
-            id(touchscreen).y,
-            (int) id(touchscreen).touched,
-            id(touchscreen).x_raw,
-            id(touchscreen).y_raw,
-            id(touchscreen).z_raw
+            id(xpt_touchscreen).x,
+            id(xpt_touchscreen).y,
+            (int) id(xpt_touchscreen).touched,
+            id(xpt_touchscreen).x_raw,
+            id(xpt_touchscreen).y_raw,
+            id(xpt_touchscreen).z_raw
             );
+
+button:
+  - platform: restart
+    name: Restart Button
+  - platform: safe_mode
+    name: Safe Mode Button
+  - platform: shutdown
+    name: Shutdown Button
+    id: shutdown_btn
+  - platform: copy
+    source_id: shutdown_btn
+    name: Shutdown Button Copy
+
+
+touchscreen:
+  - platform: ektf2232
+    interrupt_pin: GPIO36
+    rts_pin: GPIO5
+    display: inkplate_display
+    on_touch:
+      - logger.log:
+          format: Touch at (%d, %d)
+          args: ["touch.x", "touch.y"]
+
+  - platform: lilygo_t5_47
+    id: lilygo_touchscreen
+    interrupt_pin: GPIO36
+    display: inkplate_display
+    on_touch:
+      - logger.log:
+          format: Touch at (%d, %d)
+          args: ["touch.x", "touch.y"]
+
+media_player:
+  - platform: i2s_audio
+    name: ${friendly_name}
+    dac_type: external
+    i2s_lrclk_pin: GPIO26
+    i2s_dout_pin: GPIO25
+    i2s_bclk_pin: GPIO27
+    mute_pin: GPIO14
+    on_state:
+      - media_player.play:
+      - media_player.play_media: http://localhost/media.mp3
+      - media_player.play_media: !lambda 'return "http://localhost/media.mp3";'
+    on_idle:
+      - media_player.pause:
+    on_play:
+      - media_player.stop:
+    on_pause:
+      - media_player.toggle:
+      - wait_until:
+          media_player.is_idle:
+      - wait_until:
+          media_player.is_playing:
+      - media_player.volume_up:
+      - media_player.volume_down:
+      - media_player.volume_set: 50%

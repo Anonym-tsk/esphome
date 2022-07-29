@@ -52,10 +52,10 @@ uint32_t IRAM_ATTR HOT AcDimmerDataStore::timer_intr(uint32_t now) {
     this->gate_pin.digital_write(false);
   }
 
-  if (time_since_zc < this->enable_time_us)
+  if (time_since_zc < this->enable_time_us) {
     // Next event is enable, return time until that event
     return this->enable_time_us - time_since_zc;
-  else if (time_since_zc < disable_time_us) {
+  } else if (time_since_zc < disable_time_us) {
     // Next event is disable, return time until that event
     return this->disable_time_us - time_since_zc;
   }
@@ -74,9 +74,10 @@ uint32_t IRAM_ATTR HOT timer_interrupt() {
   uint32_t min_dt_us = 1000;
   uint32_t now = micros();
   for (auto *dimmer : all_dimmers) {
-    if (dimmer == nullptr)
+    if (dimmer == nullptr) {
       // no more dimmers
       break;
+    }
     uint32_t res = dimmer->timer_intr(now);
     if (res != 0 && res < min_dt_us)
       min_dt_us = res;
@@ -120,7 +121,11 @@ void IRAM_ATTR HOT AcDimmerDataStore::gpio_intr() {
       // calculate time until enable in µs: (1.0-value)*cycle_time, but with integer arithmetic
       // also take into account min_power
       auto min_us = this->cycle_time_us * this->min_power / 1000;
-      this->enable_time_us = std::max((uint32_t) 1, ((65535 - this->value) * (this->cycle_time_us - min_us)) / 65535);
+      // calculate required value to provide a true RMS voltage output
+      this->enable_time_us =
+          std::max((uint32_t) 1, (uint32_t)((65535 - (acos(1 - (2 * this->value / 65535.0)) / 3.14159 * 65535)) *
+                                            (this->cycle_time_us - min_us)) /
+                                     65535);
       if (this->method == DIM_METHOD_LEADING_PULSE) {
         // Minimum pulse time should be enough for the triac to trigger when it is close to the ZC zone
         // this is for brightness near 99%
@@ -212,12 +217,13 @@ void AcDimmer::dump_config() {
   LOG_PIN("  Zero-Cross Pin: ", this->zero_cross_pin_);
   ESP_LOGCONFIG(TAG, "   Min Power: %.1f%%", this->store_.min_power / 10.0f);
   ESP_LOGCONFIG(TAG, "   Init with half cycle: %s", YESNO(this->init_with_half_cycle_));
-  if (method_ == DIM_METHOD_LEADING_PULSE)
+  if (method_ == DIM_METHOD_LEADING_PULSE) {
     ESP_LOGCONFIG(TAG, "   Method: leading pulse");
-  else if (method_ == DIM_METHOD_LEADING)
+  } else if (method_ == DIM_METHOD_LEADING) {
     ESP_LOGCONFIG(TAG, "   Method: leading");
-  else
+  } else {
     ESP_LOGCONFIG(TAG, "   Method: trailing");
+  }
 
   LOG_FLOAT_OUTPUT(this);
   ESP_LOGV(TAG, "  Estimated Frequency: %.3fHz", 1e6f / this->store_.cycle_time_us / 2);

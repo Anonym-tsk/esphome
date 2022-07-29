@@ -44,8 +44,9 @@ async def to_code(config):
     width, height = image.size
     frames = image.n_frames
     if CONF_RESIZE in config:
-        image.thumbnail(config[CONF_RESIZE])
-        width, height = image.size
+        new_width_max, new_height_max = config[CONF_RESIZE]
+        ratio = min(new_width_max / width, new_height_max / height)
+        width, height = int(width * ratio), int(height * ratio)
     else:
         if width > 500 or height > 500:
             _LOGGER.warning(
@@ -59,7 +60,13 @@ async def to_code(config):
         for frameIndex in range(frames):
             image.seek(frameIndex)
             frame = image.convert("L", dither=Image.NONE)
+            if CONF_RESIZE in config:
+                frame = frame.resize([width, height])
             pixels = list(frame.getdata())
+            if len(pixels) != height * width:
+                raise core.EsphomeError(
+                    f"Unexpected number of pixels in {path} frame {frameIndex}: ({len(pixels)} != {height*width})"
+                )
             for pix in pixels:
                 data[pos] = pix
                 pos += 1
@@ -69,8 +76,16 @@ async def to_code(config):
         pos = 0
         for frameIndex in range(frames):
             image.seek(frameIndex)
+            if CONF_RESIZE in config:
+                image.thumbnail(config[CONF_RESIZE])
             frame = image.convert("RGB")
+            if CONF_RESIZE in config:
+                frame = frame.resize([width, height])
             pixels = list(frame.getdata())
+            if len(pixels) != height * width:
+                raise core.EsphomeError(
+                    f"Unexpected number of pixels in {path} frame {frameIndex}: ({len(pixels)} != {height*width})"
+                )
             for pix in pixels:
                 data[pos] = pix[0]
                 pos += 1
@@ -79,12 +94,37 @@ async def to_code(config):
                 data[pos] = pix[2]
                 pos += 1
 
+    elif config[CONF_TYPE] == "RGB565":
+        data = [0 for _ in range(height * width * 2 * frames)]
+        pos = 0
+        for frameIndex in range(frames):
+            image.seek(frameIndex)
+            frame = image.convert("RGB")
+            if CONF_RESIZE in config:
+                frame = frame.resize([width, height])
+            pixels = list(frame.getdata())
+            if len(pixels) != height * width:
+                raise core.EsphomeError(
+                    f"Unexpected number of pixels in {path} frame {frameIndex}: ({len(pixels)} != {height*width})"
+                )
+            for pix in pixels:
+                R = pix[0] >> 3
+                G = pix[1] >> 2
+                B = pix[2] >> 3
+                rgb = (R << 11) | (G << 5) | B
+                data[pos] = rgb >> 8
+                pos += 1
+                data[pos] = rgb & 255
+                pos += 1
+
     elif config[CONF_TYPE] == "BINARY":
         width8 = ((width + 7) // 8) * 8
         data = [0 for _ in range((height * width8 // 8) * frames)]
         for frameIndex in range(frames):
             image.seek(frameIndex)
             frame = image.convert("1", dither=Image.NONE)
+            if CONF_RESIZE in config:
+                frame = frame.resize([width, height])
             for y in range(height):
                 for x in range(width):
                     if frame.getpixel((x, y)):
