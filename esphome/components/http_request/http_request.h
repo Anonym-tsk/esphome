@@ -48,7 +48,7 @@ class HttpRequestComponent : public Component {
   void send(const std::vector<HttpRequestResponseTrigger *> &response_triggers);
   void send();
   void close();
-  const char *HttpRequestComponent::get_string();
+  const char *get_string();
 
  protected:
   HTTPClient client_{};
