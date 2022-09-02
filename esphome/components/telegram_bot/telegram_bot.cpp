@@ -37,7 +37,7 @@ bool TelegramBotComponent::is_chat_allowed(std::string chat_id) {
 }
 
 void TelegramBotComponent::make_request_(const char *method, std::string body,
-                                         const std::function<void(JsonObject &)> &callback) {
+                                         const std::function<void(JsonObject)> &callback) {
   std::string url = "https://api.telegram.org/bot" + this->token_ + "/" + to_string(method);
   this->request_->set_url(url);
   this->request_->set_force_reuse(true);
@@ -45,35 +45,40 @@ void TelegramBotComponent::make_request_(const char *method, std::string body,
   this->request_->send();
 
   if (callback != nullptr) {
-    String response = this->request_->get_string();
-    if (response.length() == 0) {
+    const char *response = this->request_->get_string();
+    size_t len = strlen(response);
+    DynamicJsonDocument &root = this->json_buffer_;
+
+    if (len == 0) {
       ESP_LOGD(TAG, "Got empty response for method %s", method);
-      callback(this->json_buffer_.createObject());
-    } else if (response.length() > 2048) {
+    } else if (len > 2048) {
       ESP_LOGW(TAG, "Message too long, skipped");
-      callback(this->json_buffer_.createObject());
     } else {
-      JsonObject &root = this->json_buffer_.parseObject(response);
-      callback(root);
-      this->json_buffer_.clear();
+      auto error = deserializeJson(root, response);
+      if (error) {
+        ESP_LOGW(TAG, "Deserialization failed with code %s", error.c_str());
+      }
     }
+
+    callback(root.as<JsonObject>());
   }
 
+  this->json_buffer_.clear();
   this->request_->close();
 }
 
-void TelegramBotComponent::get_updates(long offset, const std::function<void(JsonObject &)> &callback) {
+void TelegramBotComponent::get_updates(long offset, const std::function<void(JsonObject)> &callback) {
   ESP_LOGV(TAG, "Get updates from id: %ld", offset);
 
-  JsonObject &body = this->json_buffer_.createObject();
+  DynamicJsonDocument &body = this->json_buffer_;
   body["offset"] = offset;
   body["limit"] = 1;
-  JsonArray &allowed_updates = body.createNestedArray("allowed_updates");
+  JsonArray allowed_updates = body.createNestedArray("allowed_updates");
   allowed_updates.add("message");
   allowed_updates.add("channel_post");
   allowed_updates.add("callback_query");
 
-  this->make_request_("getUpdates", ((JsonVariant) body).as<std::string>(), callback);
+  this->make_request_("getUpdates", body.as<std::string>(), callback);
   this->json_buffer_.clear();
 }
 
@@ -81,15 +86,15 @@ void TelegramBotComponent::send_message(std::string chat_id, std::string message
                                         std::list<KeyboardButton> inline_keyboard) {
   ESP_LOGV(TAG, "Send message to chat '%s': %s", chat_id.c_str(), message.c_str());
 
-  JsonObject &body = this->json_buffer_.createObject();
+  DynamicJsonDocument &body = this->json_buffer_;
   body["chat_id"] = chat_id;
   body["text"] = message;
 
   if (!inline_keyboard.empty()) {
-    JsonArray &buttons =
+    JsonArray buttons =
         body.createNestedObject("reply_markup").createNestedArray("inline_keyboard").createNestedArray();
     for (const KeyboardButton &btn : inline_keyboard) {
-      JsonObject &button = buttons.createNestedObject();
+      DynamicJsonDocument button = buttons.createNestedObject();
       button["text"] = btn.text;
       if (!btn.url.empty()) {
         button["url"] = btn.url;
@@ -100,7 +105,7 @@ void TelegramBotComponent::send_message(std::string chat_id, std::string message
     }
   }
 
-  this->make_request_("sendMessage", ((JsonVariant) body).as<std::string>(), nullptr);
+  this->make_request_("sendMessage", body.as<std::string>(), nullptr);
   this->json_buffer_.clear();
 }
 
@@ -112,11 +117,11 @@ void TelegramBotComponent::send_message(std::string chat_id, std::string message
 void TelegramBotComponent::answer_callback_query(std::string callback_query_id, std::string message) {
   ESP_LOGV(TAG, "Send callback to '%s': %s", callback_query_id.c_str(), message.c_str());
 
-  JsonObject &body = this->json_buffer_.createObject();
+  DynamicJsonDocument &body = this->json_buffer_;
   body["callback_query_id"] = callback_query_id;
   body["text"] = message;
 
-  this->make_request_("answerCallbackQuery", ((JsonVariant) body).as<std::string>(), nullptr);
+  this->make_request_("answerCallbackQuery", body.as<std::string>(), nullptr);
   this->json_buffer_.clear();
 }
 
@@ -127,8 +132,8 @@ void TelegramBotMessageUpdater::update() {
     this->last_message_id_ = -6;
   }
 
-  this->parent_->get_updates(offset, [this](JsonObject &root) {
-    if (root.success() && root.size() > 0) {
+  this->parent_->get_updates(offset, [this](JsonObject root) {
+    if (!root.isNull() && root.size() > 0) {
       bool is_ok = root["ok"].as<bool>() && root.containsKey("result");
       int size = root["result"].size();
       ESP_LOGV(TAG, "Response size: %d", size);
@@ -163,7 +168,7 @@ void TelegramBotMessageUpdater::add_on_message_callback(std::function<void(Messa
   this->message_callback_.add(std::move(callback));
 }
 
-Message TelegramBotMessageUpdater::process_message_(JsonObject &result) {
+Message TelegramBotMessageUpdater::process_message_(DynamicJsonDocument result) {
   int update_id = result["update_id"];
 
   Message message;
@@ -179,7 +184,7 @@ Message TelegramBotMessageUpdater::process_message_(JsonObject &result) {
   message.date = result["message"]["date"].as<std::string>();
 
   if (result.containsKey("message")) {
-    JsonObject &data = result["message"];
+    DynamicJsonDocument data = result["message"];
     message.type = "message";
     message.id = data["message_id"].as<std::string>();
     message.from_id = data["from"]["id"].as<std::string>();
@@ -188,14 +193,14 @@ Message TelegramBotMessageUpdater::process_message_(JsonObject &result) {
     message.chat_id = data["chat"]["id"].as<std::string>();
     message.chat_title = data["chat"]["title"].as<std::string>();
   } else if (result.containsKey("channel_post")) {
-    JsonObject &data = result["channel_post"];
+    DynamicJsonDocument data = result["channel_post"];
     message.type = "channel_post";
     message.id = data["message_id"].as<std::string>();
     message.text = data["text"].as<std::string>();
     message.chat_id = data["chat"]["id"].as<std::string>();
     message.chat_title = data["chat"]["title"].as<std::string>();
   } else if (result.containsKey("callback_query")) {
-    JsonObject &data = result["callback_query"];
+    DynamicJsonDocument data = result["callback_query"];
     message.type = "callback_query";
     message.id = data["id"].as<std::string>();
     message.from_id = data["from"]["id"].as<std::string>();

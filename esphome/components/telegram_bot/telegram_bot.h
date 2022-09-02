@@ -31,12 +31,13 @@ struct KeyboardButton {
 // TelegramBotComponent
 class TelegramBotComponent : public Component {
  public:
+  TelegramBotComponent() : json_buffer_(2048) {};
   void setup() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
   void set_token(std::string token) { this->token_ = token; }
   void add_allowed_chat_id(std::string chat_id) { this->allowed_chat_ids_.push_back(chat_id); }
-  void get_updates(long offset, const std::function<void(JsonObject &)> &callback);
+  void get_updates(long offset, const std::function<void(JsonObject)> &callback);
   bool is_chat_allowed(std::string chat_id);
   void send_message(std::string chat_id, std::string message, std::list<KeyboardButton> inline_keyboard);
   void send_message(std::string chat_id, std::string message);
@@ -46,8 +47,8 @@ class TelegramBotComponent : public Component {
   std::string token_;
   std::list<std::string> allowed_chat_ids_{};
   http_request::HttpRequestComponent *request_;
-  DynamicJsonBuffer json_buffer_;
-  void make_request_(const char *method, std::string body, const std::function<void(JsonObject &)> &callback);
+  DynamicJsonDocument json_buffer_;
+  void make_request_(const char *method, std::string body, const std::function<void(JsonObject)> &callback);
 };
 
 // TelegramBotMessageUpdater
@@ -63,7 +64,7 @@ class TelegramBotMessageUpdater : public PollingComponent {
   TelegramBotComponent *parent_{nullptr};
   long last_message_id_ = -6;  // Get last 5 unread messages one by one
   CallbackManager<void(Message)> message_callback_{};
-  Message process_message_(JsonObject &result);
+  Message process_message_(DynamicJsonDocument result);
 };
 
 // TelegramBotMessageTrigger
