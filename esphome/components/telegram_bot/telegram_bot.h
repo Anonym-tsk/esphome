@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <list>
+#include "esphome/core/application.h"
 #include "esphome/core/automation.h"
 #include "esphome/core/component.h"
 #include "esphome/components/json/json_util.h"
@@ -105,7 +106,9 @@ template<typename... Ts> class TelegramBotSendAction : public Action<Ts...> {
 
   void play(Ts... x) override {
     for (const std::string &chat_id : this->chat_ids_) {
-      this->parent_->send_message(chat_id, this->message_.value(x...), this->inline_keyboard_);
+      App.scheduler.set_timeout(this->parent_, "", 0, [this, chat_id, x...]() {
+        this->parent_->send_message(chat_id, this->message_.value(x...), this->inline_keyboard_);
+      });
     }
   }
 
@@ -123,7 +126,9 @@ template<typename... Ts> class TelegramBotAnswerCallbackAction : public Action<T
   TEMPLATABLE_VALUE(std::string, message)
 
   void play(Ts... x) override {
-    this->parent_->answer_callback_query(this->callback_id_.value(x...), this->message_.value(x...));
+    App.scheduler.set_timeout(this->parent_, "", 0, [this, x...]() {
+      this->parent_->answer_callback_query(this->callback_id_.value(x...), this->message_.value(x...));
+    });
   }
 
  protected:

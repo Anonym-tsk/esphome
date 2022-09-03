@@ -94,7 +94,7 @@ void TelegramBotComponent::send_message(std::string chat_id, std::string message
     JsonArray buttons =
         body.createNestedObject("reply_markup").createNestedArray("inline_keyboard").createNestedArray();
     for (const KeyboardButton &btn : inline_keyboard) {
-      DynamicJsonDocument button = buttons.createNestedObject();
+      JsonObject button = buttons.createNestedObject();
       button["text"] = btn.text;
       if (!btn.url.empty()) {
         button["url"] = btn.url;
